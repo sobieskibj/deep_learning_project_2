@@ -1,4 +1,5 @@
 data/*.7z
 data/*.txt
-data/*
-data/*
+data/t*
+virtual_env
+.DS_Store
