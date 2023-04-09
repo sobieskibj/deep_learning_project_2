@@ -27,3 +27,11 @@ where $m$ - mel frequency value, $f$ - initial frequency value.
 
 [wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations](https://arxiv.org/abs/2006.11477)
 
+# Additional info
+
+To use *PyTorch Lightning* with *Apple M1*, do:
+
+`export GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1`
+
+`export GRPC_PYTHON_BUILD_SYSTEM_ZLIB=1`
+
