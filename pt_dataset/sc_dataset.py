@@ -21,19 +21,18 @@ class SCDataset(Dataset):
         self.use_sliced_bg = use_sliced_bg
 
         if type == 'train':
-            self.paths_list = list(self.path.glob('audio/*/*.wav'))
+            self.paths_list = list(self.path.glob('train/audio/*/*.wav'))
             if self.use_sliced_bg:
                 self._slice_background_noises()
 
         elif type == 'val':
-            with (self.path / 'validation_list.txt').open() as f:
-                self.paths_list = [self.path / p for p in f.readlines()]
+            with (self.path / 'train' / 'validation_list.txt').open() as f:
+                self.paths_list = [self.path / 'train' / 'audio' /  p.split('\n')[0] for p in f.readlines()]
             if self.use_sliced_bg:
                 self._slice_background_noises()
 
         elif type == 'test':
-            with (self.path / 'testing_list.txt').open() as f:
-                self.paths_list = [self.path / p for p in f.readlines()]
+            self.paths_list = list(self.path.glob('test/audio/*.wav'))
         
         self.labels = np.unique([p.parts[-2] for p in self.paths_list])
         self.labels_encoding = {label: i for i, label in enumerate(self.labels)}
@@ -102,14 +101,13 @@ class SCDataset(Dataset):
             if num_channels > 1:
                 axes[c].set_ylabel(f"Channel {c+1}")
         figure.suptitle(f'Spectrogram')
-        plt.show(block = False)
-                
+        plt.show(block = False)  
 
 if __name__ == '__main__':
-    path = 'data/train'
-    type = 'train'
+    path = 'data'
+    type = 'val'
     dataset = SCDataset(path, type)
-    print(dataset[0])
+    print(dataset[-1])
     
     
     
