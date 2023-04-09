@@ -11,6 +11,8 @@ class SCDataset(Dataset):
     def __init__(self, path, type = 'train', use_sliced_bg = True):
         '''
         type - 'train', 'val', 'test'
+        use_sliced_bg - if True, slices all original .wav files in 
+            _background_noise_ to 1 second long clips
         '''
         super().__init__()
         self.path = Path(path)
@@ -89,7 +91,7 @@ class SCDataset(Dataset):
     def plot_example_specgram(self):
         waveform, _ = self[0]
         waveform = waveform.numpy()
-        num_channels, num_frames = waveform.shape
+        num_channels, _ = waveform.shape
         sample_rate = 16000
 
         figure, axes = plt.subplots(num_channels, 1)

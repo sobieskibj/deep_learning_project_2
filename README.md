@@ -23,3 +23,7 @@ where $m$ - mel frequency value, $f$ - initial frequency value.
 
 `torchaudio.transforms.MelSpectrogram()(waveform)`
 
+# Interesting papers
+
+[wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations](https://arxiv.org/abs/2006.11477)
+
