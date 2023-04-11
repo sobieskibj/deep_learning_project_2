@@ -17,23 +17,28 @@ class SCDataset(Dataset):
         super().__init__()
         self.path = Path(path)
         self.type = type
-        self.sample_rate = 16000
         self.use_sliced_bg = use_sliced_bg
 
-        if type == 'train':
-            self.paths_list = list(self.path.glob('train/audio/*/*.wav'))
+        self.sample_rate = 16000
+        self.train_size_ratio = 9
+
+        if self.type == 'train':
+            paths_train = set(self.path.glob('train/audio/*/*.wav'))
+            with (self.path / 'train' / 'validation_list.txt').open() as f:
+                paths_val = {self.path / 'train' / 'audio' /  p.split('\n')[0] for p in f.readlines()}
+            self.paths_list = list(paths_train.difference(paths_val))
             if self.use_sliced_bg:
                 self._slice_background_noises()
 
-        elif type == 'val':
+        elif self.type == 'val':
             with (self.path / 'train' / 'validation_list.txt').open() as f:
                 self.paths_list = [self.path / 'train' / 'audio' /  p.split('\n')[0] for p in f.readlines()]
             if self.use_sliced_bg:
                 self._slice_background_noises()
 
-        elif type == 'test':
+        elif self.type == 'test':
             self.paths_list = list(self.path.glob('test/audio/*.wav'))
-        
+
         self.labels = np.unique([p.parts[-2] for p in self.paths_list])
         self.labels_encoding = {label: i for i, label in enumerate(self.labels)}
         self.labels_encoding['_background_noise_'] = 'silence'
@@ -49,7 +54,11 @@ class SCDataset(Dataset):
         return waveform, label
 
     def _slice_background_noises(self):
-        paths = [p for p in self.paths_list if '_background_noise_' in p.parts]
+        if self.type == 'train':
+            paths = [p for p in self.paths_list if '_background_noise_' in p.parts]
+        elif self.type == 'val':
+            paths = [p for p in self.path.glob('train/audio/*/*.wav') if '_background_noise_' in p.parts]
+
         if len(paths) == 6:
             print('Creating sliced background noises')
             for p in paths:
@@ -60,21 +69,36 @@ class SCDataset(Dataset):
                     new_wav, _ = torchaudio.load(p, frame_offset, self.sample_rate)
                     new_path = p.with_stem(f'{p.stem}_{i}')
                     torchaudio.save(new_path, new_wav, self.sample_rate)
-                    self.paths_list.append(new_path)
-                self.paths_list.pop(self.paths_list.index(p)) # pop original files
+                    paths.append(new_path)
+
+            paths_new = [p for p in paths if re.search(r'\d+$', p.stem)]
+            paths_new.sort()
+            for i, p in enumerate(paths_new):
+                if self.type == 'train' and i % self.train_size_ratio == 0:
+                    self.paths_list.append(p)
+                elif self.type == 'val' and i % self.train_size_ratio != 0:
+                    self.paths_list.append(p)
+
         else:
             print('Background noises already sliced')
-            # pop original files from the paths list
-            paths_to_pop = [p for p in paths if not re.search(r'\d+$', p.stem)]
-            for p in paths_to_pop:
+            paths_new = [p for p in paths if re.search(r'\d+$', p.stem)]
+            paths_new.sort()
+            for i, p in enumerate(paths_new):
+                if self.type == 'train' and i % self.train_size_ratio != 0:
+                    self.paths_list.pop(self.paths_list.index(p))
+                elif self.type == 'val' and i % self.train_size_ratio == 0:
+                    self.paths_list.append(p)            
+
+        if self.type == 'train':
+            paths_orig = [p for p in paths if not re.search(r'\d+$', p.stem)]
+            for p in paths_orig:
                 self.paths_list.pop(self.paths_list.index(p))
 
     def plot_example_waveform(self):
         waveform, _ = self[0]
         waveform = waveform.numpy()
-        sample_rate = 16000
         num_channels, num_frames = waveform.shape
-        time_axis = torch.arange(0, num_frames) / sample_rate
+        time_axis = torch.arange(0, num_frames) / self.sample_rate
 
         figure, axes = plt.subplots(num_channels, 1)
         if num_channels == 1:
@@ -91,13 +115,12 @@ class SCDataset(Dataset):
         waveform, _ = self[0]
         waveform = waveform.numpy()
         num_channels, _ = waveform.shape
-        sample_rate = 16000
 
         figure, axes = plt.subplots(num_channels, 1)
         if num_channels == 1:
             axes = [axes]
         for c in range(num_channels):
-            axes[c].specgram(waveform[c], Fs=sample_rate)
+            axes[c].specgram(waveform[c], Fs=self.sample_rate)
             if num_channels > 1:
                 axes[c].set_ylabel(f"Channel {c+1}")
         figure.suptitle(f'Spectrogram')
@@ -105,9 +128,8 @@ class SCDataset(Dataset):
 
 if __name__ == '__main__':
     path = 'data'
-    type = 'val'
+    type = 'train'
     dataset = SCDataset(path, type)
-    print(dataset[-1])
     
     
     
