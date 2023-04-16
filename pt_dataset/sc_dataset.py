@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 
 class SCDataset(Dataset):
 
-    def __init__(self, path, type = 'train', use_sliced_bg = True):
+    def __init__(self, path, type = 'train', transforms = [], use_sliced_bg = True):
         '''
         type - 'train', 'val', 'test'
         use_sliced_bg - if True, slices all original .wav files in 
@@ -17,6 +17,7 @@ class SCDataset(Dataset):
         super().__init__()
         self.path = Path(path)
         self.type = type
+        self.transforms = transforms
         self.use_sliced_bg = use_sliced_bg
 
         self.sample_rate = 16000
@@ -37,7 +38,7 @@ class SCDataset(Dataset):
                 self._slice_background_noises()
 
         elif self.type == 'test':
-            self.paths_list = list(self.path.glob('test/audio/*.wav'))[:1000]
+            self.paths_list = list(self.path.glob('test/audio/*.wav'))
 
         self.labels = np.unique([p.parts[-2] for p in self.paths_list])
         self.labels_encoding = {label: i for i, label in enumerate(self.labels)}
@@ -49,6 +50,8 @@ class SCDataset(Dataset):
     def __getitem__(self, index):
         p = self.paths_list[index]
         waveform, _ = torchaudio.load(p)
+        if self.transforms:
+            waveform = self.transforms(waveform)
         if self.type != 'test': # class label
             label = torch.tensor(self.labels_encoding[p.parts[-2]], dtype = torch.int32)
         else: # filename
