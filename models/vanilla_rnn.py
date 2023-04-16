@@ -2,15 +2,19 @@ import sys
 sys.path.append('./')
 
 from pt_dataset.sc_dataset import SCDataset
-from utils.utils import collate_fn_rnn
+from utils.utils import pad_and_pack, pad_and_pack_test
 
 import torch
 from torch import optim, nn
 
+import wandb
+
 import lightning.pytorch as pl
+from lightning.pytorch import seed_everything
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 from lightning.pytorch.loggers.wandb import WandbLogger
+from lightning.pytorch.loggers import CSVLogger
 
 import torchmetrics
 from torchmetrics import classification
@@ -29,7 +33,7 @@ class VanillaRNN(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(64, 31))
 
-        self.calc_acc = classification.MulticlassAccuracy(num_classes = 31, validate_args = False)
+        self.calc_acc = classification.MulticlassAccuracy(num_classes = 31)
     
     def forward(self, x):
         _, h_n = self.rnn(x)
@@ -48,7 +52,6 @@ class VanillaRNN(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
-        y = y.type(torch.int32)
         output = self(x)
         val_loss = nn.functional.cross_entropy(output, y)
         self.log("val_loss", val_loss, batch_size = 128, prog_bar = True)
@@ -60,10 +63,15 @@ class VanillaRNN(pl.LightningModule):
 
 if __name__ == '__main__':
     PATH_DATA = 'data'
+    PATH_SAVE_RESULTS = 'tmp_results'
+    NAME = 'test'
+    SEED = 0
+
+    seed_everything(SEED, workers = True)
 
     wandb_logger = WandbLogger(
         project = 'deep_learning_project_2',
-        name = 'test',
+        name = NAME,
         group = 'test',
         save_dir = '.')
 
@@ -76,29 +84,25 @@ if __name__ == '__main__':
         train_dataset,
         batch_size = 128, 
         shuffle = True, 
-        collate_fn = collate_fn_rnn,
+        collate_fn = pad_and_pack,
         num_workers = 8)
     
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size = 128, 
         shuffle = False, 
-        collate_fn = collate_fn_rnn,
+        collate_fn = pad_and_pack,
         num_workers = 8)
 
     trainer = pl.Trainer(
         callbacks=[
-            EarlyStopping(monitor = "val_acc", mode = "max"),
+            EarlyStopping(monitor = "val_acc", mode = "max", patience = 5),
             DeviceStatsMonitor(cpu_stats = True)],
         max_epochs = 10,
         profiler = "simple",
         logger = wandb_logger)
-    
+
     trainer.fit(
         model = model, 
         train_dataloaders = train_dataloader,
         val_dataloaders = val_dataloader)
-
-
-    
-

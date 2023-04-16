@@ -37,11 +37,11 @@ class SCDataset(Dataset):
                 self._slice_background_noises()
 
         elif self.type == 'test':
-            self.paths_list = list(self.path.glob('test/audio/*.wav'))
+            self.paths_list = list(self.path.glob('test/audio/*.wav'))[:1000]
 
         self.labels = np.unique([p.parts[-2] for p in self.paths_list])
         self.labels_encoding = {label: i for i, label in enumerate(self.labels)}
-        self.rev_labels_encoding = {i: l for l, i in self.labels_encoding.items()}
+        self.labels_decoding = {i: l for l, i in self.labels_encoding.items()}
 
     def __len__(self):
         return len(self.paths_list)
@@ -49,7 +49,10 @@ class SCDataset(Dataset):
     def __getitem__(self, index):
         p = self.paths_list[index]
         waveform, _ = torchaudio.load(p)
-        label = torch.tensor(self.labels_encoding[p.parts[-2]], dtype = torch.int32)
+        if self.type != 'test': # class label
+            label = torch.tensor(self.labels_encoding[p.parts[-2]], dtype = torch.int32)
+        else: # filename
+            label = p.parts[-1]
         return waveform, label
 
     def _slice_background_noises(self):
@@ -127,10 +130,9 @@ class SCDataset(Dataset):
 
 if __name__ == '__main__':
     path = 'data'
-    type = 'train'
+    type = 'test'
     dataset = SCDataset(path, type)
-    print(len(dataset.labels))
-    import pdb; pdb.set_trace()
+    print(dataset[0])
     
     
     
