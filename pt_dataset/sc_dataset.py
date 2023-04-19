@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 
 class SCDataset(Dataset):
 
-    def __init__(self, path, type = 'train', transforms = [], use_sliced_bg = True):
+    def __init__(self, path, type = 'train', transforms = None, use_sliced_bg = True):
         '''
         type - 'train', 'val', 'test'
         use_sliced_bg - if True, slices all original .wav files in 
@@ -50,7 +50,7 @@ class SCDataset(Dataset):
     def __getitem__(self, index):
         p = self.paths_list[index]
         waveform, _ = torchaudio.load(p)
-        if self.transforms:
+        if self.transforms is not None:
             waveform = self.transforms(waveform)
         if self.type != 'test': # class label
             label = torch.tensor(self.labels_encoding[p.parts[-2]], dtype = torch.int32)
@@ -129,13 +129,12 @@ class SCDataset(Dataset):
             if num_channels > 1:
                 axes[c].set_ylabel(f"Channel {c+1}")
         figure.suptitle(f'Spectrogram')
-        plt.show(block = False)  
+        plt.show(block = False)
 
 if __name__ == '__main__':
     path = 'data'
-    type = 'test'
+    type = 'train'
     dataset = SCDataset(path, type)
-    print(dataset[0])
     
     
     

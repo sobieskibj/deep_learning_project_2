@@ -2,6 +2,9 @@ import sys
 sys.path.append('./')
 
 from pt_dataset.sc_dataset import SCDataset
+
+import uuid
+
 from utils.utils import collate_pad_and_pack, collate_pad
 
 import torch
@@ -43,13 +46,14 @@ class WaveformToSpecgram(nn.Module):
         # Resample the input
         waveform = self.pad(waveform, (0, 16000 - waveform.shape[1]))
         # print('Waveform shape after pad:', waveform.shape)
-        resampled = self.resample(waveform)
+        # resampled = self.resample(waveform)
         # print('Resampled shape:', resampled.shape)
         # Convert to power spectrogram
-        spec = self.spec(resampled)
+        # spec = self.spec(resampled)
+        spec = self.spec(waveform)
         # print('Specgram shape:', spec.shape)
         # Apply SpecAugment
-        spec = self.spec_aug(spec)
+        # spec = self.spec_aug(spec)
         # print('Augmented specgram shape:', spec.shape)
         # Convert to mel-scale
         mel = self.mel_scale(spec)
@@ -62,28 +66,34 @@ class ConvRNN(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv1d(
-                in_channels = 16, 
+            nn.Conv2d(
+                in_channels = 1, 
                 out_channels = 256, 
                 kernel_size = 3, 
                 padding = 1),
             nn.ReLU(),
-            nn.Conv1d(
+            nn.Conv2d(
                 in_channels = 256, 
-                out_channels = 512, 
+                out_channels = 128, 
                 kernel_size = 3, 
                 padding = 1),
             nn.ReLU(),
-            nn.Conv1d(
-                in_channels = 512, 
-                out_channels = 256, 
+            nn.Conv2d(
+                in_channels = 128, 
+                out_channels = 64, 
+                kernel_size = 3, 
+                padding = 1),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels = 64, 
+                out_channels = 1, 
                 kernel_size = 3, 
                 padding = 1),
             nn.ReLU())
         self.rnn = nn.RNN(
                 input_size = 256,
                 hidden_size = 256,
-                num_layers = 8,
+                num_layers = 3,
                 batch_first = True)
         self.output = nn.Sequential(
             nn.ReLU(),
@@ -96,8 +106,10 @@ class ConvRNN(pl.LightningModule):
     def forward(self, x):
         # print('Shape after preprocessing:', x.shape)
         x = torch.transpose(x, -1, -2) # batch x freqs x time -> batch x time x freqs
+        x = torch.unsqueeze(x, 1) # batch x single_channel x time x freqs
         # print('Shape of cnn input:', x.shape)
-        x = self.cnn(x)
+        x = self.cnn(x) # batch x single_channel x d1 (time) x d2 (freqs)
+        x = torch.squeeze(x) # batch x d1 (time) x d2 (freqs)
         # print('Shape of cnn output:', x.shape)
         _, h_n = self.rnn(x)
         # print('Shape of rnn output:', h_n.shape)
@@ -114,27 +126,28 @@ class ConvRNN(pl.LightningModule):
         x, y = batch
         output = self(x)
         val_loss = nn.functional.cross_entropy(output, y)
-        self.log("val_loss", val_loss, batch_size = 256, prog_bar = True)
-        self.log("val_acc", self.calc_acc(output, y), batch_size = 256, prog_bar = True)
+        self.log("val_loss", val_loss, batch_size = x.shape[0], prog_bar = True)
+        self.log("val_acc", self.calc_acc(output, y), batch_size = x.shape[0], prog_bar = True)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr = 1e-3)
         return optimizer
 
 def get_model_id():
-    return f'test_conv_rnn'
+    return str(uuid.uuid4())
 
 if __name__ == '__main__':
     PATH_DATA = 'data'
-    NAME = 'test'
+    NAME = get_model_id()
     SEED = 0
+    BATCH_SIZE = 128
 
     seed_everything(SEED, workers = True)
 
     wandb_logger = WandbLogger(
         project = 'deep_learning_project_2',
         name = NAME,
-        id = get_model_id(),
+        id = NAME,
         group = 'test')
 
     model = ConvRNN()
@@ -144,13 +157,13 @@ if __name__ == '__main__':
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size = 256, 
+        batch_size = BATCH_SIZE, 
         shuffle = True, 
         num_workers = 8)
     
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
-        batch_size = 256, 
+        batch_size = BATCH_SIZE, 
         shuffle = False, 
         num_workers = 8)
 
@@ -158,10 +171,11 @@ if __name__ == '__main__':
         callbacks=[
             EarlyStopping(monitor = "val_acc", mode = "max", patience = 5),
             DeviceStatsMonitor(cpu_stats = True)],
-        max_epochs = 10,
+        max_epochs = 100,
         profiler = "simple",
         logger = wandb_logger,
-        fast_dev_run = False)
+        fast_dev_run = False,
+        enable_checkpointing = False)
 
     trainer.fit(
         model = model, 
