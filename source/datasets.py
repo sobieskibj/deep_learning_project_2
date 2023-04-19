@@ -1,11 +1,11 @@
 from collections import Counter
 from enum import Flag, auto
 from pathlib import Path
+from copy import copy
 from typing import Callable
 
+import torch
 import torchaudio
-from torch import Tensor
-from torch.utils.data import Dataset
 
 
 class Subset(Flag):
@@ -14,8 +14,8 @@ class Subset(Flag):
     TEST = auto()
 
 
-class SpeechCommands(Dataset):
-    KNOWN_LABELS = {
+class SpeechCommands(torch.utils.data.Dataset):
+    TEST_LABELS = {
         "yes",
         "no",
         "up",
@@ -26,6 +26,7 @@ class SpeechCommands(Dataset):
         "off",
         "stop",
         "go",
+        "_silence_",
     }
 
     def __init__(
@@ -33,7 +34,7 @@ class SpeechCommands(Dataset):
         root: str | Path,
         subset: Subset,
         use_silence: bool,
-        aggregate_unknown: bool,
+        only_test_labels: bool,
         transform: Callable | None = None,
     ) -> None:
         super().__init__()
@@ -41,7 +42,7 @@ class SpeechCommands(Dataset):
         self.root = Path(root).absolute()
         self.subset = subset
         self.use_silence = use_silence
-        self.aggregate_unknown = aggregate_unknown
+        self.only_test_labels = only_test_labels
         self.transform = transform
 
         valid_paths = self.read_list(self.root, self.root / "train/validation_list.txt")
@@ -72,54 +73,59 @@ class SpeechCommands(Dataset):
             paths |= test_paths
         self.paths = sorted(paths)
 
-        all_labels = {path.stem for path in (self.root / "train/audio").glob("[!_]*")}
+        all_labels = set(map(lambda path: path.parts[-2], self.paths))
+        known_labels = copy(all_labels)
+        if only_test_labels:
+            known_labels &= self.TEST_LABELS
+        self.all_labels = sorted(all_labels)
+        self.known_labels = sorted(known_labels)
 
-        labels_idx = {
-            label: i for i, label in enumerate(sorted(all_labels & self.KNOWN_LABELS))
-        }
-
-        if aggregate_unknown:
-            labels_idx |= {
-                label: max(labels_idx.values()) + 1
-                for label in sorted(all_labels - self.KNOWN_LABELS)
-            }
+    def label_to_index(self, label: str) -> int:
+        if label in self.known_labels:
+            index = self.known_labels.index(label)
+        elif label in self.all_labels:
+            index = len(self.known_labels)
         else:
-            labels_idx |= {
-                label: max(labels_idx.values()) + 1 + i
-                for i, label in enumerate(sorted(all_labels - self.KNOWN_LABELS))
-            }
+            raise ValueError("wrong label")
 
-        if use_silence:
-            labels_idx |= {"_silence_": max(labels_idx.values()) + 1}
+        return index
 
-        self.labels_idx = labels_idx
+    def index_to_label(self, index: int) -> str:
+        if index < len(self.known_labels):
+            label = self.known_labels[index]
+        elif index == len(self.known_labels):
+            label = "unknown"
+        else:
+            raise ValueError("wrong index")
 
-    def get_metadata(self, index: int) -> tuple[Path, int]:
+        return label
+
+    def get_metadata(self, index: int) -> tuple[Path, str]:
         path = self.paths[index]
-        label_idx = self.labels_idx[path.parts[-2]]
+        label = path.parts[-2]
 
-        return path, label_idx
+        return path, label
 
-    def get_counts(self) -> dict[tuple[str, int], int]:
-        return {
-            label_idx: count
-            for label_idx, count in sorted(
-                Counter(self.get_metadata(i)[1] for i in range(len(self))).items(),
-                key=lambda item: item[0],
-            )
-        }
-
-    def __getitem__(self, index) -> tuple[Tensor, int]:
-        path, label_idx = self.get_metadata(index)
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+        path, label = self.get_metadata(index)
 
         waveform, _ = torchaudio.load(path)
         if self.transform is not None:
             waveform = self.transform(waveform)
 
-        return waveform, label_idx
+        label_index = torch.tensor(self.label_to_index(label))
+
+        return waveform, label_index
 
     def __len__(self) -> int:
         return len(self.paths)
+
+    def get_counts(self) -> list[int]:
+        counter = Counter(
+            self.label_to_index(self.get_metadata(i)[1]) for i in range(len(self))
+        )
+
+        return [counter[key] for key in sorted(counter.keys())]
 
     @staticmethod
     def read_list(root: str | Path, path: str | Path) -> set[Path]:
@@ -129,7 +135,7 @@ class SpeechCommands(Dataset):
         return paths
 
 
-class SpeechCommandsKaggle(Dataset):
+class SpeechCommandsKaggle(torch.utils.data.Dataset):
     def __init__(self, root: str | Path, transform: Callable | None = None) -> None:
         super().__init__()
 
@@ -144,7 +150,7 @@ class SpeechCommandsKaggle(Dataset):
 
         return path, filename
 
-    def __getitem__(self, index) -> tuple[Tensor, str]:
+    def __getitem__(self, index) -> tuple[torch.Tensor, str]:
         path, filename = self.get_metadata(index)
 
         waveform, _ = torchaudio.load(path)
