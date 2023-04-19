@@ -1,2 +1,3 @@
 /data/speech_commands/*
+__pycache__
 !.gitkeep
