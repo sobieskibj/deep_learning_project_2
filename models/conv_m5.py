@@ -1,7 +1,7 @@
 import sys
 sys.path.append('./')
 
-from pt_dataset.sc_dataset import SCDataset
+from pt_dataset.sc_dataset_2 import SpeechCommands, Subset
 
 import torch
 from torch import optim, nn
@@ -15,7 +15,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from utils.utils import get_accuracy, collate_pad_2
+from utils.utils import get_accuracy, collate_pad_2, get_class_weights
 
 class ConvM5(pl.LightningModule):
 
@@ -27,7 +27,10 @@ class ConvM5(pl.LightningModule):
             stride = 16, 
             n_channel = 32,
             optimizer_params = {},
-            loss_params = {}):
+            train_loss_params = {},
+            val_loss_params = {},
+            train_loss_weight = None,
+            val_loss_weight = None):
         super().__init__()
         self.transform = transform
         self.conv1 = nn.Conv1d(n_input, n_channel, kernel_size = 80, stride = stride)
@@ -45,7 +48,13 @@ class ConvM5(pl.LightningModule):
         self.fc1 = nn.Linear(2 * n_channel, n_output)
 
         self.optimizer_params = optimizer_params
-        self.loss_params = loss_params
+        self.train_loss_params = train_loss_params
+        self.val_loss_params = val_loss_params
+
+        if train_loss_weight is not None:
+            self.train_loss_weight = torch.tensor(train_loss_weight, device = self.device)
+        if val_loss_weight is not None:
+            self.val_loss_weight = torch.tensor(val_loss_weight, device = self.device)
 
     def forward(self, x):
         x = self.transform(x)
@@ -69,14 +78,16 @@ class ConvM5(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        loss =  F.nll_loss(output.squeeze(), y.long(), **self.loss_params)
-        self.log("train_loss", loss, prog_bar = True)
+        weight = torch.tensor(self.train_loss_params, device = self.device)
+        loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
+        self.log("train_loss", loss, on_epoch = True, prog_bar = True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        val_loss =  F.nll_loss(output.squeeze(), y.long())
+        weight = torch.tensor(self.val_loss_params, device = self.device)
+        val_loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
         val_acc = get_accuracy(output, y)
         self.log("val_loss", val_loss, prog_bar = True)
         self.log("val_acc", val_acc, on_epoch = True, prog_bar = True)
@@ -85,16 +96,29 @@ class ConvM5(pl.LightningModule):
         optimizer = optim.Adam(self.parameters(), **self.optimizer_params)
         return optimizer
 
+def get_class_weights(counts):
+    return [1/e for e in counts.values()]
+
 def main(config):
     seed_everything(config['general']['seed'], workers = True)
 
     wandb_logger = WandbLogger(
         config = config,
         **config['logger'])
+    
+    train_dataset = SpeechCommands(**config['dataset'], subset = Subset.TRAIN | Subset.TEST)
+    val_dataset = SpeechCommands(**config['dataset'], subset = Subset.VALID)
 
-    train_dataset = SCDataset(type = 'train', **config['dataset'])
-    val_dataset = SCDataset(type = 'val', **config['dataset'])
-    model = ConvM5(**config['model'])
+    # train_loss_weights = get_class_weights(train_dataset.get_counts())
+    # val_loss_weights = get_class_weights(val_dataset.get_counts())
+
+    # train_loss_params = {'weight': train_loss_weights}
+    # val_loss_params = {'weight': val_loss_weights}
+
+    model = ConvM5(
+        train_loss_params = get_class_weights(train_dataset.get_counts()),
+        val_loss_params = get_class_weights(val_dataset.get_counts()),
+        **config['model'])
 
     train_dataloader = torch.utils.data.DataLoader(
         dataset = train_dataset,
@@ -121,15 +145,18 @@ if __name__ == '__main__':
             'seed': 0
         },
         'dataset': {
-            'path': 'data'
+            'root': 'data',
+            'use_silence': True,
+            'aggregate_unknown': False
         },
         'logger': {
             'project': 'deep_learning_project_2',
-            'name': 'test',
             'group': 'test',
+            'name': 'dasdasdas'
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
+            'n_channel': 32,
             'optimizer_params': {
                 'lr': 1e-2,
                 'weight_decay': 1e-4
@@ -151,12 +178,12 @@ if __name__ == '__main__':
         },
         'trainer': {
             'callbacks': [
-                EarlyStopping(monitor = "val_acc", mode = "max", patience = 15),
+                EarlyStopping(monitor = "val_acc", mode = "max", patience = 10),
                 DeviceStatsMonitor(cpu_stats = True)],
-            'max_epochs': 100,
+            'max_epochs': 1000,
             'profiler': 'simple',
             'fast_dev_run': False,
-            'enable_checkpointing': False
+            'enable_checkpointing': True
         }
     }
 
