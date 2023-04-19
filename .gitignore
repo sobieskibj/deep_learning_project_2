@@ -1,10 +1,2 @@
-data/*.7z
-data/*.txt
-data/t*
-virtual_env
-.DS_Store
-deep_learning_msc
-lightning_logs
-__pycache__
-wandb
-deep_learning_project_2
+/data/speech_commands/*
+!.gitkeep
