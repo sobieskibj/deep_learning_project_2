@@ -78,7 +78,8 @@ class ConvM5(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        weight = torch.tensor(self.train_loss_params, device = self.device)
+        if self.train_loss_weight is not None:
+            weight = torch.tensor(self.train_loss_params, device = self.device)
         loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
         self.log("train_loss", loss, on_epoch = True, prog_bar = True)
         return loss
@@ -86,7 +87,8 @@ class ConvM5(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        weight = torch.tensor(self.val_loss_params, device = self.device)
+        if self.val_loss_weight is not None:
+            weight = torch.tensor(self.val_loss_params, device = self.device)
         val_loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
         val_acc = get_accuracy(output, y)
         self.log("val_loss", val_loss, prog_bar = True)
