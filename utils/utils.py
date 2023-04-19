@@ -5,6 +5,7 @@ import copy
 import torch
 import itertools
 import numpy as np
+from pathlib import Path
 from torch.nn.utils.rnn import pack_sequence, pad_sequence
 
 # configs
@@ -29,6 +30,13 @@ def make_configs(base_config, combinations):
         print(f'{n}. {id}')
         configs.append(config)
     return configs
+
+def get_best_ckpt_path_from_config(config):
+    project_name = config['logger']['project']
+    run_name = config['logger']['name']
+    ckpt_paths = sorted((Path(project_name).absolute() / run_name / 'checkpoints').glob('*.ckpt'))
+    best_ckpt_path = ckpt_paths[-1]
+    return best_ckpt_path
 
 # collate fns
 

@@ -7,7 +7,7 @@ import torchaudio
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 
-from utils.utils import collate_pad_2, make_configs
+from utils.utils import collate_pad_2, make_configs, get_best_ckpt_path_from_config
 
 if __name__ == '__main__':
     
@@ -22,7 +22,7 @@ if __name__ == '__main__':
         },
         'logger': {
             'project': 'deep_learning_project_2',
-            'group': 'test',
+            'group': 'exp_1',
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
@@ -31,21 +31,18 @@ if __name__ == '__main__':
                 'lr': 1e-2,
                 'weight_decay': 1e-4
             },
-            'loss_params': {}
         },
         'train_dataloader': {
             'batch_size': 128, 
             'shuffle': True,
             'num_workers': 8,
-            'collate_fn': collate_pad_2,
-            'pin_memory': True
+            'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
             'shuffle': False,
             'num_workers': 8,
-            'collate_fn': collate_pad_2,
-            'pin_memory': True
+            'collate_fn': collate_pad_2
         },
         'trainer': {
             'callbacks': [
@@ -55,7 +52,8 @@ if __name__ == '__main__':
             'profiler': 'simple',
             'fast_dev_run': False,
             'enable_checkpointing': True
-        }
+        },
+        'trainer_fit': {},
     }
 
     combinations = {
@@ -69,7 +67,7 @@ if __name__ == '__main__':
         },
         'n_ch': {
             'dict_path': ['model', 'n_channel'],
-            'values': [32] # single values are provided so that they are included in name and version
+            'values': [64] # single values are provided so that they are included in name and version
         },
         'seed': {
             'dict_path': ['general', 'seed'],
@@ -80,4 +78,7 @@ if __name__ == '__main__':
     configs = make_configs(base_config, combinations)
     
     for config in configs:
+        ckpt_path = get_best_ckpt_path_from_config(config)
+        if ckpt_path.exists():
+            config['trainer_fit']['ckpt_path'] = ckpt_path # will resume training from the saved state
         main(config)

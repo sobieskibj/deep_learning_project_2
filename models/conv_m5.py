@@ -3,6 +3,8 @@ sys.path.append('./')
 
 from pt_dataset.sc_dataset_2 import SpeechCommands, Subset
 
+import wandb
+
 import torch
 from torch import optim, nn
 import torch.nn.functional as F
@@ -27,8 +29,6 @@ class ConvM5(pl.LightningModule):
             stride = 16, 
             n_channel = 32,
             optimizer_params = {},
-            train_loss_params = {},
-            val_loss_params = {},
             train_loss_weight = None,
             val_loss_weight = None):
         super().__init__()
@@ -48,8 +48,6 @@ class ConvM5(pl.LightningModule):
         self.fc1 = nn.Linear(2 * n_channel, n_output)
 
         self.optimizer_params = optimizer_params
-        self.train_loss_params = train_loss_params
-        self.val_loss_params = val_loss_params
 
         if train_loss_weight is not None:
             self.train_loss_weight = torch.tensor(train_loss_weight, device = self.device)
@@ -79,7 +77,7 @@ class ConvM5(pl.LightningModule):
         x, y = batch
         output = self(x)
         if self.train_loss_weight is not None:
-            weight = torch.tensor(self.train_loss_params, device = self.device)
+            weight = torch.tensor(self.train_loss_weight, device = self.device)
         loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
         self.log("train_loss", loss, on_epoch = True, prog_bar = True)
         return loss
@@ -88,7 +86,7 @@ class ConvM5(pl.LightningModule):
         x, y = batch
         output = self(x)
         if self.val_loss_weight is not None:
-            weight = torch.tensor(self.val_loss_params, device = self.device)
+            weight = torch.tensor(self.val_loss_weight, device = self.device)
         val_loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
         val_acc = get_accuracy(output, y)
         self.log("val_loss", val_loss, prog_bar = True)
@@ -118,8 +116,8 @@ def main(config):
     # val_loss_params = {'weight': val_loss_weights}
 
     model = ConvM5(
-        train_loss_params = get_class_weights(train_dataset.get_counts()),
-        val_loss_params = get_class_weights(val_dataset.get_counts()),
+        train_loss_weight = get_class_weights(train_dataset.get_counts()),
+        val_loss_weight = get_class_weights(val_dataset.get_counts()),
         **config['model'])
 
     train_dataloader = torch.utils.data.DataLoader(
@@ -138,7 +136,10 @@ def main(config):
     trainer.fit(
         model = model, 
         train_dataloaders = train_dataloader,
-        val_dataloaders = val_dataloader)
+        val_dataloaders = val_dataloader,
+        **config['trainer_fit'])
+    
+    wandb.finish()
 
 if __name__ == '__main__':
 
@@ -158,7 +159,7 @@ if __name__ == '__main__':
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
-            'n_channel': 32,
+            'n_channel': 128,
             'optimizer_params': {
                 'lr': 1e-2,
                 'weight_decay': 1e-4
@@ -167,16 +168,14 @@ if __name__ == '__main__':
         'train_dataloader': {
             'batch_size': 128, 
             'shuffle': True,
-            'num_workers': 8,
-            'collate_fn': collate_pad_2,
-            'pin_memory': True
+            'num_workers': 6,
+            'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
             'shuffle': False,
-            'num_workers': 8,
+            'num_workers': 6,
             'collate_fn': collate_pad_2,
-            'pin_memory': True
         },
         'trainer': {
             'callbacks': [
