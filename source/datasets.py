@@ -1,3 +1,4 @@
+from collections import Counter
 from enum import Flag, auto
 from pathlib import Path
 from typing import Callable
@@ -93,20 +94,27 @@ class SpeechCommands(Dataset):
 
         self.labels_idx = labels_idx
 
-    def get_metadata(self, index: int) -> tuple[Path, str]:
+    def get_metadata(self, index: int) -> tuple[Path, int]:
         path = self.paths[index]
-        label = path.parts[-2]
+        label_idx = self.labels_idx[path.parts[-2]]
 
-        return path, label
+        return path, label_idx
+
+    def get_counts(self) -> dict[tuple[str, int], int]:
+        return {
+            label_idx: count
+            for label_idx, count in sorted(
+                Counter(self.get_metadata(i)[1] for i in range(len(self))).items(),
+                key=lambda item: item[0],
+            )
+        }
 
     def __getitem__(self, index) -> tuple[Tensor, int]:
-        path, label = self.get_metadata(index)
+        path, label_idx = self.get_metadata(index)
 
         waveform, _ = torchaudio.load(path)
         if self.transform is not None:
             waveform = self.transform(waveform)
-
-        label_idx = self.labels_idx[label]
 
         return waveform, label_idx
 
