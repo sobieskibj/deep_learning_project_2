@@ -5,7 +5,7 @@ from pt_dataset.sc_dataset import SCDataset
 
 import uuid
 
-from utils.utils import collate_pad_and_pack, collate_pad
+from utils.utils import collate_pad_and_pack, collate_pad, get_accuracy
 
 import torch
 from torch import optim, nn
@@ -63,32 +63,19 @@ class WaveformToSpecgram(nn.Module):
 
 class ConvRNN(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(
+            self,
+            n_channel = 64,
+            n_output = 31):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(
-                in_channels = 1, 
-                out_channels = 256, 
-                kernel_size = 3, 
-                padding = 1),
+            nn.Conv2d(1, 4 * n_channel, kernel_size = 3, padding = 1),
             nn.ReLU(),
-            nn.Conv2d(
-                in_channels = 256, 
-                out_channels = 128, 
-                kernel_size = 3, 
-                padding = 1),
+            nn.Conv2d(4 * n_channel, 2 * n_channel, kernel_size = 3, padding = 1),
             nn.ReLU(),
-            nn.Conv2d(
-                in_channels = 128, 
-                out_channels = 64, 
-                kernel_size = 3, 
-                padding = 1),
+            nn.Conv2d(2 * n_channel, n_channel, kernel_size = 3, padding = 1),
             nn.ReLU(),
-            nn.Conv2d(
-                in_channels = 64, 
-                out_channels = 1, 
-                kernel_size = 3, 
-                padding = 1),
+            nn.Conv2d(n_channel, out_channels = 1, kernel_size = 3, padding = 1),
             nn.ReLU())
         self.rnn = nn.RNN(
                 input_size = 256,
@@ -99,7 +86,7 @@ class ConvRNN(pl.LightningModule):
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 31))
+            nn.Linear(128, n_output))
     
         self.calc_acc = classification.MulticlassAccuracy(num_classes = 31)
 
@@ -126,8 +113,9 @@ class ConvRNN(pl.LightningModule):
         x, y = batch
         output = self(x)
         val_loss = nn.functional.cross_entropy(output, y)
-        self.log("val_loss", val_loss, batch_size = x.shape[0], prog_bar = True)
-        self.log("val_acc", self.calc_acc(output, y), batch_size = x.shape[0], prog_bar = True)
+        val_acc = get_accuracy(output, y)
+        self.log("val_loss", val_loss, prog_bar = True)
+        self.log("val_acc", val_acc, on_epoch = True, prog_bar = True)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr = 1e-3)

@@ -85,3 +85,8 @@ def get_accuracy(output, target):
     correct = number_of_correct(pred, target)
     accuracy = correct / output.shape[0]
     return accuracy
+
+# loss weighing
+
+def get_class_weights(counts):
+    pass

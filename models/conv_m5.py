@@ -26,7 +26,8 @@ class ConvM5(pl.LightningModule):
             n_output = 31, 
             stride = 16, 
             n_channel = 32,
-            optimizer_params = {}):
+            optimizer_params = {},
+            loss_params = {}):
         super().__init__()
         self.transform = transform
         self.conv1 = nn.Conv1d(n_input, n_channel, kernel_size = 80, stride = stride)
@@ -44,6 +45,7 @@ class ConvM5(pl.LightningModule):
         self.fc1 = nn.Linear(2 * n_channel, n_output)
 
         self.optimizer_params = optimizer_params
+        self.loss_params = loss_params
 
     def forward(self, x):
         x = self.transform(x)
@@ -67,7 +69,7 @@ class ConvM5(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        loss =  F.nll_loss(output.squeeze(), y.long())
+        loss =  F.nll_loss(output.squeeze(), y.long(), **self.loss_params)
         self.log("train_loss", loss, prog_bar = True)
         return loss
     
@@ -90,9 +92,9 @@ def main(config):
         config = config,
         **config['logger'])
 
-    model = ConvM5(**config['model'])
     train_dataset = SCDataset(type = 'train', **config['dataset'])
     val_dataset = SCDataset(type = 'val', **config['dataset'])
+    model = ConvM5(**config['model'])
 
     train_dataloader = torch.utils.data.DataLoader(
         dataset = train_dataset,

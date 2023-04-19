@@ -28,7 +28,8 @@ if __name__ == '__main__':
             'optimizer_params': {
                 'lr': 1e-2,
                 'weight_decay': 1e-4
-            }
+            },
+            'loss_params': {}
         },
         'train_dataloader': {
             'batch_size': 128, 
