@@ -31,12 +31,19 @@ def make_configs(base_config, combinations):
         configs.append(config)
     return configs
 
-def get_best_ckpt_path_from_config(config):
+def get_best_ckpt_path(config):
     project_name = config['logger']['project']
     run_name = config['logger']['name']
     ckpt_paths = sorted((Path(project_name).absolute() / run_name / 'checkpoints').glob('*.ckpt'))
+    if ckpt_paths:
+        return ckpt_paths[-1]
+    else:
+        return None
+    
+def mark_ckpt_as_finished(project_name, run_name):
+    ckpt_paths = sorted((Path(project_name).absolute() / run_name / 'checkpoints').glob('*.ckpt'))
     best_ckpt_path = ckpt_paths[-1]
-    return best_ckpt_path
+    best_ckpt_path.rename(best_ckpt_path.with_stem(f'{best_ckpt_path.stem}_final'))
 
 # collate fns
 

@@ -17,7 +17,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from utils.utils import get_accuracy, collate_pad_2, get_class_weights
+from utils.utils import get_accuracy, collate_pad_2, get_class_weights, mark_ckpt_as_finished
 
 class ConvM5(pl.LightningModule):
 
@@ -109,12 +109,6 @@ def main(config):
     train_dataset = SpeechCommands(**config['dataset'], subset = Subset.TRAIN | Subset.TEST)
     val_dataset = SpeechCommands(**config['dataset'], subset = Subset.VALID)
 
-    # train_loss_weights = get_class_weights(train_dataset.get_counts())
-    # val_loss_weights = get_class_weights(val_dataset.get_counts())
-
-    # train_loss_params = {'weight': train_loss_weights}
-    # val_loss_params = {'weight': val_loss_weights}
-
     model = ConvM5(
         train_loss_weight = get_class_weights(train_dataset.get_counts()),
         val_loss_weight = get_class_weights(val_dataset.get_counts()),
@@ -140,6 +134,9 @@ def main(config):
         **config['trainer_fit'])
     
     wandb.finish()
+    project_name = config['logger']['project']
+    run_name = config['logger']['name']
+    mark_ckpt_as_finished(project_name, run_name)
 
 if __name__ == '__main__':
 

@@ -7,7 +7,7 @@ import torchaudio
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 
-from utils.utils import collate_pad_2, make_configs, get_best_ckpt_path_from_config
+from utils.utils import collate_pad_2, make_configs, get_best_ckpt_path
 
 if __name__ == '__main__':
     
@@ -35,13 +35,13 @@ if __name__ == '__main__':
         'train_dataloader': {
             'batch_size': 128, 
             'shuffle': True,
-            'num_workers': 8,
+            'num_workers': 6,
             'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
             'shuffle': False,
-            'num_workers': 8,
+            'num_workers': 6,
             'collate_fn': collate_pad_2
         },
         'trainer': {
@@ -78,7 +78,14 @@ if __name__ == '__main__':
     configs = make_configs(base_config, combinations)
     
     for config in configs:
-        ckpt_path = get_best_ckpt_path_from_config(config)
-        if ckpt_path.exists():
-            config['trainer_fit']['ckpt_path'] = ckpt_path # will resume training from the saved state
+        ckpt_path = get_best_ckpt_path(config)
+        if ckpt_path is not None:
+            if '_final' in ckpt_path.name:
+                print(f'Skipping {ckpt_path}')
+                continue
+            else:
+                print(f'Resuming training from {ckpt_path}')
+                config['trainer_fit']['ckpt_path'] = ckpt_path # will resume training from the saved state
+        else:
+            print('Starting run from scratch')
         main(config)
