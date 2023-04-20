@@ -9,12 +9,15 @@ import torch
 from torch import optim, nn
 import torch.nn.functional as F
 
+import torchmetrics
+from torchmetrics.classification import MulticlassAccuracy
+
 import torchaudio
 
 import lightning.pytorch as pl
 from lightning.pytorch import seed_everything
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import DeviceStatsMonitor
+from lightning.pytorch.callbacks import DeviceStatsMonitor, ModelCheckpoint
 from lightning.pytorch.loggers.wandb import WandbLogger
 
 from utils.utils import get_accuracy, collate_pad_2, get_class_weights, mark_ckpt_as_finished, get_likely_index
@@ -27,7 +30,7 @@ class ConvM5(pl.LightningModule):
             n_input = 1, 
             n_output = 31, 
             stride = 16, 
-            n_channel = 32,
+            n_channel = 64,
             optimizer_params = {},
             train_loss_weight = None,
             val_loss_weight = None):
@@ -47,12 +50,22 @@ class ConvM5(pl.LightningModule):
         self.pool4 = nn.MaxPool1d(4)
         self.fc1 = nn.Linear(2 * n_channel, n_output)
 
+        self.n_output = n_output
+
         self.optimizer_params = optimizer_params
 
-        if train_loss_weight is not None:
-            self.train_loss_weight = torch.tensor(train_loss_weight, device = self.device)
-        if val_loss_weight is not None:
-            self.val_loss_weight = torch.tensor(val_loss_weight, device = self.device)
+        self.register_buffer("train_loss_weight", train_loss_weight)
+        self.register_buffer("val_loss_weight", val_loss_weight)
+
+        self.metrics_collection = torchmetrics.MetricCollection({
+            'metrics/tm_micro_val_acc': MulticlassAccuracy(n_output, average = 'micro'),
+            'metrics/tm_macro_val_acc': MulticlassAccuracy(n_output, average = 'macro'),
+            'metrics/tm_weighted_val_acc': MulticlassAccuracy(n_output, average = 'weighted')})
+
+        self.balanced_accuracy = MulticlassAccuracy(n_output, average = 'weighted')
+
+        self.validation_step_outputs = []
+        self.prediction_step_outputs = []
 
     def forward(self, x):
         x = self.transform(x)
@@ -76,33 +89,36 @@ class ConvM5(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        if self.train_loss_weight is not None:
-            weight = torch.tensor(self.train_loss_weight, device = self.device)
-        loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
-        self.log("train_loss", loss, on_epoch = True, prog_bar = True)
+        loss =  F.nll_loss(output.squeeze(), y.long(), weight = self.train_loss_weight)
+        self.log("losses/train_loss", loss, on_epoch = True, prog_bar = True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        if self.val_loss_weight is not None:
-            weight = torch.tensor(self.val_loss_weight, device = self.device)
-        val_loss =  F.nll_loss(output.squeeze(), y.long(), weight = weight)
-        val_acc = get_accuracy(output, y)
-        self.log("val_loss", val_loss, prog_bar = True)
-        self.log("val_acc", val_acc, on_epoch = True, prog_bar = True)
+        output = output.squeeze()
+        val_loss =  F.nll_loss(output, y.long(), weight = self.val_loss_weight)
+        metrics = self.metrics_collection(output, y)
+        metrics['losses/val_loss'] = val_loss
+        metrics['metrics/val_acc'] = get_accuracy(output, y)
+        self.log_dict(metrics, prog_bar = True, on_epoch = True)
+        self.validation_step_outputs.append((get_likely_index(output), y))
+    
+    def on_validation_epoch_end(self):
+        all_preds = torch.cat([e[0] for e in self.validation_step_outputs])
+        all_targets = torch.cat([e[1] for e in self.validation_step_outputs])
+        bal_val_acc = self.balanced_accuracy(all_preds, all_targets)
+        self.log("metrics/tm_balanced_val_acc", bal_val_acc, prog_bar = True)
+        self.validation_step_outputs.clear()
 
     def predict_step(self, batch, batch_idx, dataloader_idx = 0):
         x, y = batch
-        outputs = self(x) 
-        return get_likely_index(outputs)
+        outputs = self(x)
+        return y, get_likely_index(outputs)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), **self.optimizer_params)
         return optimizer
-
-def get_class_weights(counts):
-    return [1/e for e in counts.values()]
 
 def main(config):
     seed_everything(config['general']['seed'], workers = True)
@@ -129,8 +145,7 @@ def main(config):
 
     trainer = pl.Trainer(
         logger = wandb_logger,
-        **config['trainer']
-    )
+        **config['trainer'])
 
     trainer.fit(
         model = model, 
@@ -156,38 +171,40 @@ if __name__ == '__main__':
         },
         'logger': {
             'project': 'deep_learning_project_2',
-            'group': 'test',
-            'name': 'dasdasdas'
+            'group': 'test_3',
+            'name': 'conf_mat_test'
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
-            'n_channel': 128,
+            'n_channel': 64,
             'optimizer_params': {
                 'lr': 1e-2,
                 'weight_decay': 1e-4
-            }
+            },
         },
         'train_dataloader': {
             'batch_size': 128, 
             'shuffle': True,
-            'num_workers': 6,
+            'num_workers': 0,
             'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
-            'shuffle': False,
-            'num_workers': 6,
-            'collate_fn': collate_pad_2,
+            'shuffle': True,
+            'num_workers': 0,
+            'collate_fn': collate_pad_2
         },
         'trainer': {
             'callbacks': [
-                EarlyStopping(monitor = "val_acc", mode = "max", patience = 10),
-                DeviceStatsMonitor(cpu_stats = True)],
+                EarlyStopping(monitor = "metrics/val_acc", mode = "max", patience = 10),
+                DeviceStatsMonitor(cpu_stats = True),
+                ModelCheckpoint(monitor = 'metrics/val_acc', save_last = True, mode = 'max')],
             'max_epochs': 1000,
             'profiler': 'simple',
             'fast_dev_run': False,
             'enable_checkpointing': True
-        }
+        },
+        'trainer_fit': {},
     }
 
     main(config)

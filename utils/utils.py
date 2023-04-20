@@ -85,6 +85,7 @@ def collate_pad_and_pack_test(batch_list):
     return batch_seqs, batch_filenames
 
 # metrics
+
 def get_likely_index(tensor):
     # find most likely label index for each element in the batch
     return tensor.argmax(dim = -1)
@@ -102,3 +103,6 @@ def get_accuracy(output, target):
 
 def get_class_weights(counts):
     return 1 / torch.tensor(list(counts.values()))
+
+def weigh_accuracy(scores, weights):
+    return torch.sum(scores * weights)
