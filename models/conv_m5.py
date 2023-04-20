@@ -17,7 +17,7 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from utils.utils import get_accuracy, collate_pad_2, get_class_weights, mark_ckpt_as_finished
+from utils.utils import get_accuracy, collate_pad_2, get_class_weights, mark_ckpt_as_finished, get_likely_index
 
 class ConvM5(pl.LightningModule):
 
@@ -91,6 +91,11 @@ class ConvM5(pl.LightningModule):
         val_acc = get_accuracy(output, y)
         self.log("val_loss", val_loss, prog_bar = True)
         self.log("val_acc", val_acc, on_epoch = True, prog_bar = True)
+
+    def predict_step(self, batch, batch_idx, dataloader_idx = 0):
+        x, y = batch
+        outputs = self(x) 
+        return get_likely_index(outputs)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), **self.optimizer_params)

@@ -5,9 +5,9 @@ from models.conv_m5 import main
 
 import torchaudio
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import DeviceStatsMonitor
+from lightning.pytorch.callbacks import DeviceStatsMonitor, ModelCheckpoint
 
-from utils.utils import collate_pad_2, make_configs, get_best_ckpt_path
+from utils.utils import collate_pad_2, make_configs, get_last_ckpt_path
 
 if __name__ == '__main__':
     
@@ -35,19 +35,20 @@ if __name__ == '__main__':
         'train_dataloader': {
             'batch_size': 128, 
             'shuffle': True,
-            'num_workers': 6,
+            'num_workers': 2,
             'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
             'shuffle': False,
-            'num_workers': 6,
+            'num_workers': 2,
             'collate_fn': collate_pad_2
         },
         'trainer': {
             'callbacks': [
                 EarlyStopping(monitor = "val_acc", mode = "max", patience = 10),
-                DeviceStatsMonitor(cpu_stats = True)],
+                DeviceStatsMonitor(cpu_stats = True),
+                ModelCheckpoint(monitor = 'val_acc', save_last = True, mode = 'max')],
             'max_epochs': 1000,
             'profiler': 'simple',
             'fast_dev_run': False,
@@ -78,7 +79,7 @@ if __name__ == '__main__':
     configs = make_configs(base_config, combinations)
     
     for config in configs:
-        ckpt_path = get_best_ckpt_path(config)
+        ckpt_path = get_last_ckpt_path(config)
         if ckpt_path is not None:
             if '_final' in ckpt_path.name:
                 print(f'Skipping {ckpt_path}')
@@ -87,5 +88,6 @@ if __name__ == '__main__':
                 print(f'Resuming training from {ckpt_path}')
                 config['trainer_fit']['ckpt_path'] = ckpt_path # will resume training from the saved state
         else:
+            import pdb; pdb.set_trace()
             print('Starting run from scratch')
         main(config)

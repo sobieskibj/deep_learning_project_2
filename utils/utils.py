@@ -31,12 +31,12 @@ def make_configs(base_config, combinations):
         configs.append(config)
     return configs
 
-def get_best_ckpt_path(config):
+def get_last_ckpt_path(config):
     project_name = config['logger']['project']
     run_name = config['logger']['name']
-    ckpt_paths = sorted((Path(project_name).absolute() / run_name / 'checkpoints').glob('*.ckpt'))
-    if ckpt_paths:
-        return ckpt_paths[-1]
+    last_ckpt_path = list((Path(project_name).absolute() / run_name / 'checkpoints').glob('last*.ckpt'))
+    if last_ckpt_path:
+        return last_ckpt_path[0]
     else:
         return None
     
@@ -85,16 +85,15 @@ def collate_pad_and_pack_test(batch_list):
     return batch_seqs, batch_filenames
 
 # metrics
+def get_likely_index(tensor):
+    # find most likely label index for each element in the batch
+    return tensor.argmax(dim = -1)
 
 def get_accuracy(output, target):
 
     def number_of_correct(pred, target):
         # count number of correct predictions
         return pred.squeeze().eq(target).sum().item()
-
-    def get_likely_index(tensor):
-        # find most likely label index for each element in the batch
-        return tensor.argmax(dim = -1)
     
     pred = get_likely_index(output)
     correct = number_of_correct(pred, target)
