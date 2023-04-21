@@ -128,9 +128,11 @@ class SpeechCommands(torch.utils.data.Dataset):
         return [counter[key] for key in sorted(counter.keys())]
 
     def get_class_weights(self):
-        classes = list(range(len(self.get_counts())))
-        y = [p[1].item() for p in self]
-        weights = compute_class_weight(class_weight = 'balanced', classes = classes, y = y)
+        counts = self.get_counts()
+        weights = [max(counts)/count for count in counts]
+        # classes = list(range(len(self.get_counts())))
+        # y = [p[1].item() for p in self]
+        # weights = compute_class_weight(class_weight = 'balanced', classes = classes, y = y)
         return torch.tensor(weights, dtype = torch.float32)
 
     @staticmethod

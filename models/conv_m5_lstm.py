@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 
 from utils.utils import get_accuracy, collate_pad_2, mark_ckpt_as_finished, get_likely_index
 
-class ConvM5(pl.LightningModule):
+class ConvM5LSTM(pl.LightningModule):
 
     def __init__(
             self, 
@@ -36,7 +36,7 @@ class ConvM5(pl.LightningModule):
             n_input = 1, 
             n_output = 12, 
             stride = 16, 
-            n_channel = 32,
+            n_channel = 64,
             optimizer_params = {},
             train_loss_weight = None,
             val_loss_weight = None):
@@ -48,13 +48,14 @@ class ConvM5(pl.LightningModule):
         self.conv2 = nn.Conv1d(n_channel, n_channel, kernel_size = 3)
         self.bn2 = nn.BatchNorm1d(n_channel)
         self.pool2 = nn.MaxPool1d(4)
-        self.conv3 = nn.Conv1d(n_channel, 2 * n_channel, kernel_size = 3)
-        self.bn3 = nn.BatchNorm1d(2 * n_channel)
-        self.pool3 = nn.MaxPool1d(4)
-        self.conv4 = nn.Conv1d(2 * n_channel, 2 * n_channel, kernel_size = 3)
-        self.bn4 = nn.BatchNorm1d(2 * n_channel)
-        self.pool4 = nn.MaxPool1d(4)
-        self.fc1 = nn.Linear(2 * n_channel, n_output)
+        self.lstm = nn.LSTM(input_size = n_channel, hidden_size = n_channel, batch_first = True)
+        # self.conv3 = nn.Conv1d(n_channel, 2 * n_channel, kernel_size = 3)
+        # self.bn3 = nn.BatchNorm1d(2 * n_channel)
+        # self.pool3 = nn.MaxPool1d(4)
+        # self.conv4 = nn.Conv1d(2 * n_channel, 2 * n_channel, kernel_size = 3)
+        # self.bn4 = nn.BatchNorm1d(2 * n_channel)
+        # self.pool4 = nn.MaxPool1d(4)
+        self.fc1 = nn.Linear(n_channel, n_output)
 
         self.n_output = n_output
 
@@ -82,27 +83,43 @@ class ConvM5(pl.LightningModule):
 
     def forward(self, x):
         x = self.transform(x)
+        print('Input shape:', x.shape)
         x = self.conv1(x)
+        print('After conv1 shape:', x.shape)
         x = F.relu(self.bn1(x))
         x = self.pool1(x)
+        print('After pool1 shape:', x.shape)
         x = self.conv2(x)
+        print('After conv2 shape:', x.shape)
         x = F.relu(self.bn2(x))
         x = self.pool2(x)
-        x = self.conv3(x)
-        x = F.relu(self.bn3(x))
-        x = self.pool3(x)
-        x = self.conv4(x)
-        x = F.relu(self.bn4(x))
-        x = self.pool4(x)
-        x = F.avg_pool1d(x, x.shape[-1])
-        x = x.permute(0, 2, 1)
+        print('After pool2 shape:', x.shape)
+        x = x.transpose(1, 2)
+        print('After transpose:', x.shape)
+        _, (h_n, _) = self.lstm(x)
+        x = h_n[-1]
+        print('Last hidden state:', x.shape)
+        # x = self.conv3(x)
+        # print('After conv3 shape:', x.shape)
+        # x = F.relu(self.bn3(x))
+        # x = self.pool3(x)
+        # print('After pool3 shape:', x.shape)
+        # x = self.conv4(x)
+        # print('After conv4 shape:', x.shape)
+        # x = F.relu(self.bn4(x))
+        # x = self.pool4(x)
+        # print('After pool4 shape:', x.shape)
+        # x = F.avg_pool1d(x, x.shape[-1])
+        # print('After avg pool shape:', x.shape)
+        # x = x.permute(0, 2, 1)
+        # print('After permute shape:', x.shape)
+        # import pdb; pdb.set_trace()
         x = self.fc1(x)
-        return F.log_softmax(x, dim = 2)
+        return F.log_softmax(x, dim = 1)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        output = output.squeeze()
         loss = F.nll_loss(output, y.long(), weight = self.train_loss_weight)
         metrics = self.metrics_collection_train(output, y)
         metrics["train/loss"] = loss
@@ -120,7 +137,6 @@ class ConvM5(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        output = output.squeeze()
         val_loss =  F.nll_loss(output, y.long(), weight = self.val_loss_weight)
         metrics = self.metrics_collection_val(output, y)
         metrics['val/loss'] = val_loss
@@ -174,7 +190,7 @@ def main(config):
     train_dataset = SpeechCommands(**config['dataset'], subset = Subset.TRAIN | Subset.TEST)
     val_dataset = SpeechCommands(**config['dataset'], subset = Subset.VALID)
 
-    model = ConvM5(
+    model = ConvM5LSTM(
         train_loss_weight = train_dataset.get_class_weights(),
         val_loss_weight = val_dataset.get_class_weights(),
         **config['model'])
@@ -215,13 +231,13 @@ if __name__ == '__main__':
         },
         'logger': {
             'project': 'deep_learning_project_2',
-            'group': 'test_3',
-            'name': 'with_weighing',
-            'version': 'with_weighing'
+            'group': 'test_lstm',
+            'name': 'lstm',
+            'version': 'lstm'
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
-            'n_channel': 32,
+            'n_channel': 64,
             'n_output': 12,
             'optimizer_params': {
                 'lr': 1e-2,
@@ -247,7 +263,7 @@ if __name__ == '__main__':
                 ModelCheckpoint(monitor = 'val/acc', save_last = True, mode = 'max')],
             'max_epochs': 1000,
             'profiler': 'simple',
-            'fast_dev_run': False,
+            'fast_dev_run': True,
             'enable_checkpointing': True
         },
         'trainer_fit': {},
