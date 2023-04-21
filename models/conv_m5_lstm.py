@@ -49,12 +49,6 @@ class ConvM5LSTM(pl.LightningModule):
         self.bn2 = nn.BatchNorm1d(n_channel)
         self.pool2 = nn.MaxPool1d(4)
         self.lstm = nn.LSTM(input_size = n_channel, hidden_size = n_channel, batch_first = True)
-        # self.conv3 = nn.Conv1d(n_channel, 2 * n_channel, kernel_size = 3)
-        # self.bn3 = nn.BatchNorm1d(2 * n_channel)
-        # self.pool3 = nn.MaxPool1d(4)
-        # self.conv4 = nn.Conv1d(2 * n_channel, 2 * n_channel, kernel_size = 3)
-        # self.bn4 = nn.BatchNorm1d(2 * n_channel)
-        # self.pool4 = nn.MaxPool1d(4)
         self.fc1 = nn.Linear(n_channel, n_output)
 
         self.n_output = n_output
@@ -83,37 +77,15 @@ class ConvM5LSTM(pl.LightningModule):
 
     def forward(self, x):
         x = self.transform(x)
-        print('Input shape:', x.shape)
         x = self.conv1(x)
-        print('After conv1 shape:', x.shape)
         x = F.relu(self.bn1(x))
         x = self.pool1(x)
-        print('After pool1 shape:', x.shape)
         x = self.conv2(x)
-        print('After conv2 shape:', x.shape)
         x = F.relu(self.bn2(x))
         x = self.pool2(x)
-        print('After pool2 shape:', x.shape)
         x = x.transpose(1, 2)
-        print('After transpose:', x.shape)
         _, (h_n, _) = self.lstm(x)
         x = h_n[-1]
-        print('Last hidden state:', x.shape)
-        # x = self.conv3(x)
-        # print('After conv3 shape:', x.shape)
-        # x = F.relu(self.bn3(x))
-        # x = self.pool3(x)
-        # print('After pool3 shape:', x.shape)
-        # x = self.conv4(x)
-        # print('After conv4 shape:', x.shape)
-        # x = F.relu(self.bn4(x))
-        # x = self.pool4(x)
-        # print('After pool4 shape:', x.shape)
-        # x = F.avg_pool1d(x, x.shape[-1])
-        # print('After avg pool shape:', x.shape)
-        # x = x.permute(0, 2, 1)
-        # print('After permute shape:', x.shape)
-        # import pdb; pdb.set_trace()
         x = self.fc1(x)
         return F.log_softmax(x, dim = 1)
 
@@ -263,8 +235,9 @@ if __name__ == '__main__':
                 ModelCheckpoint(monitor = 'val/acc', save_last = True, mode = 'max')],
             'max_epochs': 1000,
             'profiler': 'simple',
-            'fast_dev_run': True,
-            'enable_checkpointing': True
+            'fast_dev_run': False,
+            'enable_checkpointing': True,
+            'accelerator': 'cpu'
         },
         'trainer_fit': {},
     }

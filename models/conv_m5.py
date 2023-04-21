@@ -36,7 +36,7 @@ class ConvM5(pl.LightningModule):
             n_input = 1, 
             n_output = 12, 
             stride = 16, 
-            n_channel = 32,
+            n_channel = 64,
             optimizer_params = {},
             train_loss_weight = None,
             val_loss_weight = None):

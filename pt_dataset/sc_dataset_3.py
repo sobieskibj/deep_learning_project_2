@@ -6,7 +6,6 @@ from typing import Callable
 
 import torch
 import torchaudio
-from sklearn.utils.class_weight import compute_class_weight
 
 class Subset(Flag):
     TRAIN = auto()

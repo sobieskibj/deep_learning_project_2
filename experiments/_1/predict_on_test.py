@@ -28,8 +28,8 @@ def process_test_predictions(predictions, label_map):
     return df
 
 if __name__ == '__main__':
-    PATH_CKPT = 'deep_learning_project_2/no_weighing/checkpoints/epoch=12-step=5928.ckpt'
-    PATH_SAVE_PREDS = 'results/exp_1_bs=128_lr=0.001_n_ch=64_seed=0_n_classes12_no_weighing.csv'
+    PATH_CKPT = 'deep_learning_project_2/finetuning_exp_1_bs=128_lr=0.001_n_ch=64_seed=0_n_classes_12_new_weighing____/checkpoints/epoch=53-step=27486.ckpt'
+    PATH_SAVE_PREDS = 'results/exp_1_bs=128_lr=0.001_n_ch=64_seed=0_n_classes12_mg_weighing_finetuned.csv'
     PATH_DATA = 'data'
     BATCH_SIZE = 1024
 
@@ -48,8 +48,8 @@ if __name__ == '__main__':
     
     model = ConvM5.load_from_checkpoint(
         PATH_CKPT, 
-        transform = torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),)
-        # train_loss_weight = train_dataset.get_class_weights(), # debug
+        transform = torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
+        train_loss_weight = train_dataset.get_class_weights(),) # debug
         # val_loss_weight = train_dataset.get_class_weights()) # debug
     
     trainer = pl.Trainer(enable_checkpointing = False, logger = False)
