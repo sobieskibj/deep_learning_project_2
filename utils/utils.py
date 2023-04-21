@@ -6,6 +6,8 @@ import torch
 import itertools
 import numpy as np
 from pathlib import Path
+import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay
 from torch.nn.utils.rnn import pack_sequence, pad_sequence
 
 # configs
@@ -102,7 +104,16 @@ def get_accuracy(output, target):
     return accuracy
 
 def get_class_weights(counts):
-    return 1 / torch.tensor(list(counts.values()))
+    return 1 / torch.tensor(counts)
 
 def weigh_accuracy(scores, weights):
     return torch.sum(scores * weights)
+
+# confusion matrix
+
+def make_conf_matrix(predictions, path_save):
+    all_targets = torch.cat([e[0].squeeze() for e in predictions]).numpy()
+    all_preds = torch.cat([e[1] for e in predictions]).numpy()
+    fig, ax = plt.subplots(figsize = (32, 32))
+    conf_mat = ConfusionMatrixDisplay.from_predictions(all_preds, all_targets, normalize = 'true',values_format = '.2f',ax = ax)
+    plt.savefig(path_save)

@@ -9,3 +9,4 @@ lightning_logs
 __pycache__
 wandb
 deep_learning_project_2
+results

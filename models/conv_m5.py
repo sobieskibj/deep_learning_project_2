@@ -1,7 +1,7 @@
 import sys
 sys.path.append('./')
 
-from pt_dataset.sc_dataset_2 import SpeechCommands, Subset
+from pt_dataset.sc_dataset_3 import SpeechCommands, Subset
 
 import wandb
 
@@ -20,7 +20,13 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import DeviceStatsMonitor, ModelCheckpoint
 from lightning.pytorch.loggers.wandb import WandbLogger
 
-from utils.utils import get_accuracy, collate_pad_2, get_class_weights, mark_ckpt_as_finished, get_likely_index
+from sklearn.metrics import ConfusionMatrixDisplay
+
+import io
+from PIL import Image
+import matplotlib.pyplot as plt
+
+from utils.utils import get_accuracy, collate_pad_2, mark_ckpt_as_finished, get_likely_index
 
 class ConvM5(pl.LightningModule):
 
@@ -28,7 +34,7 @@ class ConvM5(pl.LightningModule):
             self, 
             transform = None, 
             n_input = 1, 
-            n_output = 31, 
+            n_output = 12, 
             stride = 16, 
             n_channel = 64,
             optimizer_params = {},
@@ -102,6 +108,7 @@ class ConvM5(pl.LightningModule):
         metrics["train/loss"] = loss
         metrics['train/acc'] = get_accuracy(output, y) # manual accuracy sanity check
         self.log_dict(metrics, on_epoch = True, prog_bar = True, on_step = False)
+        self.training_step_outputs.append((get_likely_index(output), y))
         return loss
     
     def on_train_epoch_end(self):
@@ -122,6 +129,7 @@ class ConvM5(pl.LightningModule):
     
     def on_validation_epoch_end(self):
         bal_acc = self.get_balanced_accuracy(self.validation_step_outputs)
+        self.log_conf_matrix(self.validation_step_outputs)
         self.log("val/tm_balanced_acc", bal_acc, prog_bar = True) # manual balanced accuracy
         self.validation_step_outputs.clear()
     
@@ -130,6 +138,22 @@ class ConvM5(pl.LightningModule):
         all_targets = torch.cat([e[1] for e in outputs])
         bal_acc = self.balanced_accuracy(all_preds, all_targets)
         return bal_acc
+
+    def log_conf_matrix(self, outputs):
+        all_preds = torch.cat([p[0] for p in outputs]).cpu().numpy()
+        all_targets = torch.cat([p[1] for p in outputs]).cpu().numpy()
+        fig, ax = plt.subplots(figsize = (20, 20))
+        ConfusionMatrixDisplay.from_predictions(
+            all_preds, 
+            all_targets,
+            values_format = '.2f', 
+            # normalize = 'true',
+            ax = ax)
+        img_buf = io.BytesIO()
+        plt.title(self.current_epoch)
+        plt.savefig(img_buf, format = 'png')
+        im = Image.open(img_buf)
+        self.logger.experiment.log({'val/confusion_matrix': wandb.Image(im)})
 
     def predict_step(self, batch, batch_idx, dataloader_idx = 0):
         x, y = batch
@@ -151,8 +175,8 @@ def main(config):
     val_dataset = SpeechCommands(**config['dataset'], subset = Subset.VALID)
 
     model = ConvM5(
-        train_loss_weight = get_class_weights(train_dataset.get_counts()),
-        val_loss_weight = get_class_weights(val_dataset.get_counts()),
+        train_loss_weight = train_dataset.get_class_weights(),
+        val_loss_weight = val_dataset.get_class_weights(),
         **config['model'])
 
     train_dataloader = torch.utils.data.DataLoader(
@@ -187,30 +211,32 @@ if __name__ == '__main__':
         'dataset': {
             'root': 'data',
             'use_silence': True,
-            'aggregate_unknown': False
+            'only_test_labels': True
         },
         'logger': {
             'project': 'deep_learning_project_2',
             'group': 'test_3',
-            'name': 'some_test'
+            'name': 'with_weighing',
+            'version': 'with_weighing'
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
             'n_channel': 64,
+            'n_output': 12,
             'optimizer_params': {
                 'lr': 1e-2,
                 'weight_decay': 1e-4
             },
         },
         'train_dataloader': {
-            'batch_size': 128, 
+            'batch_size': 128,
             'shuffle': True,
             'num_workers': 0,
             'collate_fn': collate_pad_2
         },
         'val_dataloader': {
             'batch_size': 128, 
-            'shuffle': True,
+            'shuffle': False,
             'num_workers': 0,
             'collate_fn': collate_pad_2
         },

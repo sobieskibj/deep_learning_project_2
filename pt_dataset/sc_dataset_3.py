@@ -6,7 +6,7 @@ from typing import Callable
 
 import torch
 import torchaudio
-
+from sklearn.utils.class_weight import compute_class_weight
 
 class Subset(Flag):
     TRAIN = auto()
@@ -127,13 +127,18 @@ class SpeechCommands(torch.utils.data.Dataset):
 
         return [counter[key] for key in sorted(counter.keys())]
 
+    def get_class_weights(self):
+        classes = list(range(len(self.get_counts())))
+        y = [p[1].item() for p in self]
+        weights = compute_class_weight(class_weight = 'balanced', classes = classes, y = y)
+        return torch.tensor(weights, dtype = torch.float32)
+
     @staticmethod
     def read_list(root: str | Path, path: str | Path) -> set[Path]:
         with open(path) as fp:
             paths = {root / "train/audio" / line.strip() for line in fp.readlines()}
 
         return paths
-
 
 class SpeechCommandsKaggle(torch.utils.data.Dataset):
     def __init__(self, root: str | Path, transform: Callable | None = None) -> None:
@@ -161,3 +166,8 @@ class SpeechCommandsKaggle(torch.utils.data.Dataset):
 
     def __len__(self) -> int:
         return len(self.paths)
+    
+if __name__ == '__main__':
+    dataset = SpeechCommands('data', Subset.TRAIN, only_test_labels = False, use_silence = True)
+    weights = dataset.get_class_weights()
+    import pdb; pdb.set_trace()
