@@ -57,15 +57,22 @@ class ConvM5(pl.LightningModule):
         self.register_buffer("train_loss_weight", train_loss_weight)
         self.register_buffer("val_loss_weight", val_loss_weight)
 
-        self.metrics_collection = torchmetrics.MetricCollection({
-            'metrics/tm_micro_val_acc': MulticlassAccuracy(n_output, average = 'micro'),
-            'metrics/tm_macro_val_acc': MulticlassAccuracy(n_output, average = 'macro'),
-            'metrics/tm_weighted_val_acc': MulticlassAccuracy(n_output, average = 'weighted')})
+        self.metrics_collection_train = torchmetrics.MetricCollection({
+            'tm_micro_acc': MulticlassAccuracy(n_output, average = 'micro'),
+            'tm_macro_acc': MulticlassAccuracy(n_output, average = 'macro'),
+            'tm_weighted_acc': MulticlassAccuracy(n_output, average = 'weighted')},
+            prefix = 'train/')
+
+        self.metrics_collection_val = torchmetrics.MetricCollection({
+            'tm_micro_acc': MulticlassAccuracy(n_output, average = 'micro'),
+            'tm_macro_acc': MulticlassAccuracy(n_output, average = 'macro'),
+            'tm_weighted_acc': MulticlassAccuracy(n_output, average = 'weighted')},
+            prefix = 'val/')
 
         self.balanced_accuracy = MulticlassAccuracy(n_output, average = 'weighted')
 
+        self.training_step_outputs = []
         self.validation_step_outputs = []
-        self.prediction_step_outputs = []
 
     def forward(self, x):
         x = self.transform(x)
@@ -89,27 +96,40 @@ class ConvM5(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
-        loss =  F.nll_loss(output.squeeze(), y.long(), weight = self.train_loss_weight)
-        self.log("losses/train_loss", loss, on_epoch = True, prog_bar = True)
+        output = output.squeeze()
+        loss =  F.nll_loss(output, y.long(), weight = self.train_loss_weight)
+        metrics = self.metrics_collection_train(output, y)
+        metrics["train/loss"] = loss
+        metrics['train/acc'] = get_accuracy(output, y) # manual accuracy sanity check
+        self.log_dict(metrics, on_epoch = True, prog_bar = True, on_step = False)
         return loss
     
+    def on_train_epoch_end(self):
+        bal_acc = self.get_balanced_accuracy(self.training_step_outputs)
+        self.log("train/tm_balanced_acc", bal_acc, prog_bar = True) # manual balanced accuracy
+        self.training_step_outputs.clear()
+
     def validation_step(self, batch, batch_idx):
         x, y = batch
         output = self(x)
         output = output.squeeze()
         val_loss =  F.nll_loss(output, y.long(), weight = self.val_loss_weight)
-        metrics = self.metrics_collection(output, y)
-        metrics['losses/val_loss'] = val_loss
-        metrics['metrics/val_acc'] = get_accuracy(output, y)
-        self.log_dict(metrics, prog_bar = True, on_epoch = True)
+        metrics = self.metrics_collection_val(output, y)
+        metrics['val/loss'] = val_loss
+        metrics['val/acc'] = get_accuracy(output, y) # manual accuracy sanity check
+        self.log_dict(metrics, on_epoch = True, prog_bar = True)
         self.validation_step_outputs.append((get_likely_index(output), y))
     
     def on_validation_epoch_end(self):
-        all_preds = torch.cat([e[0] for e in self.validation_step_outputs])
-        all_targets = torch.cat([e[1] for e in self.validation_step_outputs])
-        bal_val_acc = self.balanced_accuracy(all_preds, all_targets)
-        self.log("metrics/tm_balanced_val_acc", bal_val_acc, prog_bar = True)
+        bal_acc = self.get_balanced_accuracy(self.validation_step_outputs)
+        self.log("val/tm_balanced_acc", bal_acc, prog_bar = True) # manual balanced accuracy
         self.validation_step_outputs.clear()
+    
+    def get_balanced_accuracy(self, outputs):
+        all_preds = torch.cat([e[0] for e in outputs])
+        all_targets = torch.cat([e[1] for e in outputs])
+        bal_acc = self.balanced_accuracy(all_preds, all_targets)
+        return bal_acc
 
     def predict_step(self, batch, batch_idx, dataloader_idx = 0):
         x, y = batch
@@ -172,7 +192,7 @@ if __name__ == '__main__':
         'logger': {
             'project': 'deep_learning_project_2',
             'group': 'test_3',
-            'name': 'conf_mat_test'
+            'name': 'some_test'
         },
         'model': {
             'transform': torchaudio.transforms.Resample(orig_freq = 16000, new_freq = 8000),
@@ -196,9 +216,9 @@ if __name__ == '__main__':
         },
         'trainer': {
             'callbacks': [
-                EarlyStopping(monitor = "metrics/val_acc", mode = "max", patience = 10),
+                EarlyStopping(monitor = "val/acc", mode = "max", patience = 10),
                 DeviceStatsMonitor(cpu_stats = True),
-                ModelCheckpoint(monitor = 'metrics/val_acc', save_last = True, mode = 'max')],
+                ModelCheckpoint(monitor = 'val/acc', save_last = True, mode = 'max')],
             'max_epochs': 1000,
             'profiler': 'simple',
             'fast_dev_run': False,

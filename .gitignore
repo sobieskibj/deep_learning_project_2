@@ -1,6 +1,7 @@
 data/*.7z
 data/*.txt
 data/t*
+plots
 virtual_env
 .DS_Store
 deep_learning_msc
