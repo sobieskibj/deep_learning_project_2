@@ -1,11 +1,12 @@
 from collections import Counter
+from copy import copy
 from enum import Flag, auto
 from pathlib import Path
-from copy import copy
 from typing import Callable
 
 import torch
 import torchaudio
+from torch.utils.data import Dataset
 
 
 class Subset(Flag):
@@ -14,7 +15,7 @@ class Subset(Flag):
     TEST = auto()
 
 
-class SpeechCommands(torch.utils.data.Dataset):
+class SpeechCommands(Dataset):
     TEST_LABELS = {
         "yes",
         "no",
@@ -26,7 +27,6 @@ class SpeechCommands(torch.utils.data.Dataset):
         "off",
         "stop",
         "go",
-        "_silence_",
     }
 
     def __init__(
@@ -73,10 +73,10 @@ class SpeechCommands(torch.utils.data.Dataset):
             paths |= test_paths
         self.paths = sorted(paths)
 
-        all_labels = set(map(lambda path: path.parts[-2], self.paths))
+        all_labels = set(map(lambda path: path.parts[-2].strip("_"), self.paths))
         known_labels = copy(all_labels)
         if only_test_labels:
-            known_labels &= self.TEST_LABELS
+            known_labels &= self.TEST_LABELS | {"silence"}
         self.all_labels = sorted(all_labels)
         self.known_labels = sorted(known_labels)
 
@@ -102,7 +102,7 @@ class SpeechCommands(torch.utils.data.Dataset):
 
     def get_metadata(self, index: int) -> tuple[Path, str]:
         path = self.paths[index]
-        label = path.parts[-2]
+        label = path.parts[-2].strip("_")
 
         return path, label
 
@@ -135,7 +135,7 @@ class SpeechCommands(torch.utils.data.Dataset):
         return paths
 
 
-class SpeechCommandsKaggle(torch.utils.data.Dataset):
+class SpeechCommandsKaggle(Dataset):
     def __init__(self, root: str | Path, transform: Callable | None = None) -> None:
         super().__init__()
 
