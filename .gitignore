@@ -1,3 +1,5 @@
-/data/speech_commands/*
+/data/*
+/wandb
+
 __pycache__
 !.gitkeep

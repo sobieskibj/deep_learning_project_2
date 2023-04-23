@@ -120,12 +120,26 @@ class SpeechCommands(Dataset):
     def __len__(self) -> int:
         return len(self.paths)
 
-    def get_counts(self) -> list[int]:
+    def get_class_labels(self) -> list[str]:
+        labels = self.known_labels
+        if self.only_test_labels:
+            labels = self.known_labels + ["unknown"]
+
+        return labels
+
+    def get_class_counts(self) -> list[int]:
         counter = Counter(
             self.label_to_index(self.get_metadata(i)[1]) for i in range(len(self))
         )
+        counts = [counter[key] for key in sorted(counter.keys())]
 
-        return [counter[key] for key in sorted(counter.keys())]
+        return counts
+
+    def get_class_weights(self) -> list[float]:
+        counts = self.get_class_counts()
+        weights = [max(counts) / count for count in counts]
+
+        return weights
 
     @staticmethod
     def read_list(root: str | Path, path: str | Path) -> set[Path]:
